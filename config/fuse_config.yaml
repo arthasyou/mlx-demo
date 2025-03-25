@@ -1,0 +1,4 @@
+# The path to the local model directory or Hugging Face repo.
+model: "/Users/you/src/llm_demo/outputs/zypt_7B"
+adapter-path: "/Users/you/models/lora"
+save-path: "/Users/you/models/fuse"
