@@ -1,7 +1,9 @@
 #!/bin/sh
 
-HF_PATH="/Users/ancient/models/DeepSeek-R1-Distill-Qwen-14B"
-MLX_PATH="$HOME/models/mlx/deepseek-r1-distill-qwen-14b"
+# 如果传入参数，则使用传入的 model 名称，否则使用默认值
+MODEL="${1:-DeepSeek-R1-Distill-Qwen-14B}"
+HF_PATH="/Users/ancient/models/$MODEL"
+MLX_PATH="$HOME/models/mlx/$MODEL"
 
 # 激活 conda 环境
 eval "$(conda shell.bash hook)"  # 确保 conda 可用

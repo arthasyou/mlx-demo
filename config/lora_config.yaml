@@ -1,5 +1,5 @@
 # The path to the local model directory or Hugging Face repo.
-model: "/Users/ancient/models/mlx/deepseek-qwen-14b"
+model: "/Users/ancient/models/mlx/Qwen2.5-14B-Instruct"
 # Whether or not to train (boolean)
 train: true
 
