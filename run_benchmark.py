@@ -1,79 +1,93 @@
+import csv
 import itertools
+import os
+import shutil
 import subprocess
 
 import yaml
 
-CONFIG_PATH = "./config/lora_config.yaml"
-BASE_ITERATIONS = 10  # 跑 10 次就够做吞吐测试
+# 文件路径
+BASE_CONFIG_PATH = "./config/lora_config.yaml"
+TEMP_CONFIG_PATH = "./config/lora_config_benchmark_temp.yaml"
+BACKUP_CONFIG_PATH = "./config/lora_config.bak.yaml"
+BASE_ITERATIONS = 10
 
-batch_sizes = [4, 8, 16]
-seq_lengths = [1024, 2048, 4096]
+# 固定 seq_len，测试不同 batch_size 和 grad_checkpoint
+SEQ_LEN = 4096
+batch_sizes = [2, 4]
+grad_checkpoints = [False, True]
 
 results = []
 
+# 备份原始配置
+shutil.copy(BASE_CONFIG_PATH, BACKUP_CONFIG_PATH)
 
-def update_config(batch_size, seq_len):
-    with open(CONFIG_PATH, "r") as f:
+
+def update_config(batch_size, grad_checkpoint):
+    shutil.copy(BACKUP_CONFIG_PATH, TEMP_CONFIG_PATH)
+    with open(TEMP_CONFIG_PATH, "r") as f:
         config = yaml.safe_load(f)
 
     config["batch_size"] = batch_size
-    config["max_seq_length"] = seq_len
+    config["max_seq_length"] = SEQ_LEN
     config["iters"] = BASE_ITERATIONS
-    config["steps_per_eval"] = 999999  # 禁用验证
+    config["steps_per_eval"] = 999999
     config["val_batches"] = 1
-    config["grad_checkpoint"] = True
+    config["grad_checkpoint"] = grad_checkpoint
 
-    with open(CONFIG_PATH, "w") as f:
+    with open(TEMP_CONFIG_PATH, "w") as f:
         yaml.dump(config, f)
 
 
 def run_training():
     result = subprocess.run(
-        ["mlx_lm.lora", "--config", CONFIG_PATH], capture_output=True, text=True
+        ["mlx_lm.lora", "--config", TEMP_CONFIG_PATH], capture_output=True, text=True
     )
-    output = result.stdout
-    return output
+    return result.stdout
 
 
 def extract_tokens_per_sec(log_text):
     for line in log_text.splitlines():
         if "Tokens/sec" in line:
             try:
-                value = float(line.strip().split("Tokens/sec")[1].split(",")[0])
-                return value
+                return float(line.strip().split("Tokens/sec")[1].split(",")[0])
             except Exception:
                 pass
     return None
 
 
 # 主循环
-for bs, sl in itertools.product(batch_sizes, seq_lengths):
-    print(f"🧪 Testing batch_size={bs}, seq_len={sl}...")
-    update_config(bs, sl)
+for gc, bs in itertools.product(grad_checkpoints, batch_sizes):
+    print(f"🧪 Testing GC={gc}, batch_size={bs}, seq_len={SEQ_LEN}...")
+    update_config(bs, gc)
     log = run_training()
     tokens_per_sec = extract_tokens_per_sec(log)
     if tokens_per_sec:
-        results.append((bs, sl, tokens_per_sec))
+        results.append((gc, bs, SEQ_LEN, tokens_per_sec))
         print(f"✅ Tokens/sec: {tokens_per_sec}")
     else:
         print("⚠️ Failed to parse Tokens/sec")
 
-# 排序结果
-results.sort(key=lambda x: x[2], reverse=True)
+# 输出结果
+results.sort(key=lambda x: x[3], reverse=True)
 print("\n📊 Benchmark Summary:")
-for bs, sl, tps in results:
-    print(f"batch_size={bs}, seq_len={sl} → Tokens/sec={tps}")
+for gc, bs, sl, tps in results:
+    print(f"GC={gc}, batch_size={bs}, seq_len={sl} → Tokens/sec={tps:.2f}")
 
-print(
-    f"\n🏆 Best config: batch_size={results[0][0]}, seq_len={results[0][1]} → Tokens/sec={results[0][2]}"
-)
+# 最优配置
+if results:
+    best = results[0]
+    print(
+        f"\n🏆 Best config: GC={best[0]}, batch_size={best[1]}, seq_len={best[2]} → Tokens/sec={best[3]:.2f}"
+    )
 
-import csv
-
-# 保存到 CSV 文件
-with open("benchmark_results.csv", "w", newline="") as csvfile:
+# 写入 CSV
+with open("benchmark_gc_batch.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(["batch_size", "seq_len", "tokens_per_sec"])
+    writer.writerow(["grad_checkpoint", "batch_size", "seq_len", "tokens_per_sec"])
     writer.writerows(results)
 
-print("📁 已将结果保存到 benchmark_results.csv")
+print("📁 已将结果保存到 benchmark_gc_batch.csv")
+
+# 清理临时文件
+os.remove(TEMP_CONFIG_PATH)
